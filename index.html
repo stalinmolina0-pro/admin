@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>ESP32 BLE Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{
+  background:#0f172a;
+  color:#e5e7eb;
+  font-family:Arial;
+  text-align:center
+}
+.card{
+  background:#1e293b;
+  padding:20px;
+  border-radius:15px;
+  max-width:420px;
+  margin:auto
+}
+button{
+  padding:10px 16px;
+  border:none;
+  border-radius:8px;
+  margin:6px;
+  cursor:pointer
+}
+.connect{background:#22c55e}
+.admin{background:#f59e0b}
+.logout{background:#ef4444;color:white}
+.hidden{display:none}
+
+/* ===== SLIDERS ===== */
+.switch{
+  position:relative;
+  display:inline-block;
+  width:60px;
+  height:34px
+}
+.switch input{display:none}
+.slider{
+  position:absolute;
+  inset:0;
+  background:#64748b;
+  border-radius:34px;
+  transition:.3s
+}
+.slider:before{
+  content:"";
+  position:absolute;
+  width:26px;
+  height:26px;
+  left:4px;
+  bottom:4px;
+  background:white;
+  border-radius:50%;
+  transition:.3s
+}
+input:checked+.slider{
+  background:#22c55e
+}
+input:checked+.slider:before{
+  transform:translateX(26px)
+}
+</style>
+</head>
+
+<body>
+<h2>🌡 ESP32 Monitor BLE</h2>
+
+<div class="card">
+  <button class="connect" onclick="connect()">Conectar Bluetooth</button>
+
+  <p>T1: <span id="t1">--</span> °C</p>
+  <p>T2: <span id="t2">--</span> °C</p>
+  <p>T3: <span id="t3">--</span> °C</p>
+  <p>T4: <span id="t4">--</span> °C</p>
+  <p><b>Promedio:</b> <span id="prom">--</span> °C</p>
+
+  <hr>
+
+  <!-- LOGIN ADMIN -->
+  <input type="password" id="pass" placeholder="Clave administrador">
+  <br><br>
+  <button class="admin" onclick="login()">Entrar como Admin</button>
+
+  <!-- PANEL ADMIN -->
+  <div id="adminPanel" class="hidden">
+    <h3>Control Manual GPIO</h3>
+
+    <p>GPIO ALTA</p>
+    <label class="switch">
+      <input type="checkbox" id="alta" onchange="gpio(this,'ALTA')">
+      <span class="slider"></span>
+    </label>
+
+    <p>GPIO BAJA</p>
+    <label class="switch">
+      <input type="checkbox" id="baja" onchange="gpio(this,'BAJA')">
+      <span class="slider"></span>
+    </label>
+
+    <br><br>
+    <button class="logout" onclick="logout()">Volver a Operario</button>
+  </div>
+</div>
+
+<script>
+let characteristic = null;
+let admin = false;
+
+async function connect(){
+  const device = await navigator.bluetooth.requestDevice({
+    filters:[{name:"ESP32_Termometros"}],
+    optionalServices:["4fafc201-1fb5-459e-8fcc-c5c9c331914b"]
+  });
+
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(
+    "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+  );
+
+  characteristic = await service.getCharacteristic(
+    "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+  );
+
+  await characteristic.startNotifications();
+  characteristic.addEventListener(
+    "characteristicvaluechanged",
+    e=>{
+      const d = JSON.parse(
+        new TextDecoder().decode(e.target.value)
+      );
+      t1.textContent = d.t1;
+      t2.textContent = d.t2;
+      t3.textContent = d.t3;
+      t4.textContent = d.t4;
+      prom.textContent = d.prom;
+    }
+  );
+}
+
+function login(){
+  if(pass.value === "1234"){
+    admin = true;
+    characteristic.writeValue(
+      new TextEncoder().encode("PASS:1234")
+    );
+
+    // borrar clave por seguridad
+    pass.value = "";
+    pass.blur();
+
+    adminPanel.classList.remove("hidden");
+  }
+}
+
+function gpio(slider, tipo){
+  if(!admin) return;
+  const cmd = tipo + ":" + (slider.checked ? "ON" : "OFF");
+  characteristic.writeValue(
+    new TextEncoder().encode(cmd)
+  );
+}
+
+function logout(){
+  admin = false;
+  characteristic.writeValue(
+    new TextEncoder().encode("LOGOUT")
+  );
+  adminPanel.classList.add("hidden");
+
+  // reset visual
+  alta.checked = false;
+  baja.checked = false;
+}
+</script>
+</body>
+</html>
